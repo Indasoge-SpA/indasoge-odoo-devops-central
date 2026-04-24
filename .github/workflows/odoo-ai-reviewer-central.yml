@@ -2,7 +2,6 @@ name: Central Odoo AI Reviewer
 
 on:
   workflow_call:
-    # 1. Agregamos un input para que el cliente declare su versión
     inputs:
       odoo_version:
         required: true
@@ -31,26 +30,27 @@ jobs:
       - name: Configurar entorno Python para ejecutar la API
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11' # Actualizado a 3.11 para evitar la advertencia
 
       - name: Instalar SDK de Gemini
-        run: pip install google-generativeai
+        # Usamos la nueva librería oficial
+        run: pip install google-genai 
 
       - name: Ejecutar Análisis con Gemini Pro
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # 2. Pasamos el input de GitHub a nuestro script de Python
           ODOO_VERSION: ${{ inputs.odoo_version }}
         run: |
           python -c "
-          import google.generativeai as genai
           import os
           import sys
+          from google import genai
 
           api_key = os.environ.get('GEMINI_API_KEY')
           odoo_version = os.environ.get('ODOO_VERSION')
-          genai.configure(api_key=api_key)
-          model = genai.GenerativeModel('gemini-1.5-pro')
+          
+          # Inicializar el cliente con el nuevo SDK
+          client = genai.Client(api_key=api_key)
 
           try:
               with open('pr_diff.txt', 'r') as f:
@@ -61,10 +61,9 @@ jobs:
           if not diff_content.strip():
               sys.exit(0)
 
-          # 3. Le decimos a la IA la versión exacta
           prompt = f'''
           Eres el Tech Lead Senior de Indasoge SpA, experto en Odoo (Python, XML, PostgreSQL).
-          Tu misión es revisar este Pull Request para un proyecto que corre en **Odoo versión {odoo_version}**.
+          Tu misión es revisar este Pull Request para un proyecto que corre en Odoo versión {odoo_version}.
           
           Criterios de revisión:
           - Asegúrate de que los métodos, decoradores (como @api.depends o @api.model) y sintaxis del ORM sean estrictamente compatibles con la versión {odoo_version}.
@@ -79,7 +78,12 @@ jobs:
           {diff_content}
           '''
 
-          response = model.generate_content(prompt)
+          # Generar la respuesta usando el nuevo método y modelo
+          response = client.models.generate_content(
+              model='gemini-2.5-pro',
+              contents=prompt
+          )
+
           with open('review.txt', 'w') as f:
               f.write(response.text)
           "
