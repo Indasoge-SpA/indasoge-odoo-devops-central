@@ -30,13 +30,12 @@ jobs:
       - name: Configurar entorno Python para ejecutar la API
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # Actualizado a 3.11 para evitar la advertencia
+          python-version: '3.11'
 
       - name: Instalar SDK de Gemini
-        # Usamos la nueva librería oficial
-        run: pip install google-genai 
+        run: pip install google-genai
 
-      - name: Ejecutar Análisis con Gemini Pro
+      - name: Ejecutar Análisis con Gemini
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ODOO_VERSION: ${{ inputs.odoo_version }}
@@ -44,12 +43,12 @@ jobs:
           python -c "
           import os
           import sys
+          import time
           from google import genai
+          from google.genai.errors import ServerError
 
           api_key = os.environ.get('GEMINI_API_KEY')
           odoo_version = os.environ.get('ODOO_VERSION')
-          
-          # Inicializar el cliente con el nuevo SDK
           client = genai.Client(api_key=api_key)
 
           try:
@@ -78,14 +77,38 @@ jobs:
           {diff_content}
           '''
 
-          # Generar la respuesta usando el nuevo método y modelo
-          response = client.models.generate_content(
-              model='gemini-2.5-flash',
-              contents=prompt
-          )
+          # Lógica de reintentos (hasta 3 intentos)
+          max_retries = 3
+          base_delay = 10 
 
-          with open('review.txt', 'w') as f:
-              f.write(response.text)
+          for attempt in range(max_retries):
+              try:
+                  print(f'Intento {attempt + 1} de {max_retries} contactando a Gemini...')
+                  response = client.models.generate_content(
+                      model='gemini-2.5-flash',
+                      contents=prompt
+                  )
+                  
+                  # Si tiene éxito, guardamos y salimos del bucle
+                  with open('review.txt', 'w') as f:
+                      f.write(response.text)
+                  print('Revisión completada con éxito.')
+                  break
+                  
+              except ServerError as e:
+                  if attempt < max_retries - 1:
+                      # Espera progresiva: 10s, luego 20s
+                      sleep_time = base_delay * (attempt + 1)
+                      print(f'Servidores saturados (503). Reintentando en {sleep_time} segundos...')
+                      time.sleep(sleep_time)
+                  else:
+                      print('Error: Servidores de Gemini no disponibles tras varios intentos.')
+                      # Creamos un archivo con un mensaje amigable para no fallar silenciosamente
+                      with open('review.txt', 'w') as f:
+                          f.write('⚠️ *Revisión automática omitida*: Los servidores de Google Gemini están experimentando alta demanda momentánea. Por favor, revisen el código manualmente o re-ejecuten la Action en unos minutos.')
+              except Exception as e:
+                   print(f'Error inesperado: {e}')
+                   sys.exit(1)
           "
           
       - name: Publicar comentario en el PR del cliente
