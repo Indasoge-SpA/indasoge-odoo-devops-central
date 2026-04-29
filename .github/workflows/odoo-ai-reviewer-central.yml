@@ -92,12 +92,12 @@ jobs:
           for attempt in range(max_retries):
               try:
                   response = client.models.generate_content(
-                      model='gemini-2.5-flash',
+                      model='gemini-2.5-pro',
                       contents=prompt
                   )
                   with open('review.txt', 'w') as f:
                       f.write(response.text)
-                  break
+                  break 
               except ServerError:
                   if attempt < max_retries - 1:
                       time.sleep(10 * (attempt + 1))
